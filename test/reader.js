@@ -18,6 +18,39 @@ describe('reader', function () {
     this.opts = { booleans: ['main.bool_true', 'main.bool_false'] }
   })
 
+  describe('readers', function () {
+    // The reader is a module singleton, so each test needs its own slot.
+    beforeEach(function () {
+      this.shared = path.join('test', 'config', 'test.ini')
+      delete this.cfreader._read_args[this.shared]
+    })
+
+    it('keeps a registration per owner', function () {
+      this.cfreader.read_config(this.shared, 'ini', () => {}, undefined, {})
+      this.cfreader.read_config(this.shared, 'ini', () => {}, undefined, {})
+
+      assert.equal(this.cfreader._read_args[this.shared].readers.length, 2)
+    })
+
+    it('replaces an owner re-reading the same file', function () {
+      const owner = {}
+      for (let i = 0; i < 5; i++) {
+        this.cfreader.read_config(this.shared, 'ini', () => {}, undefined, owner)
+      }
+
+      assert.equal(this.cfreader._read_args[this.shared].readers.length, 1)
+    })
+
+    it('separates registrations by type and options', function () {
+      const owner = {}
+      this.cfreader.read_config(this.shared, 'ini', () => {}, undefined, owner)
+      this.cfreader.read_config(this.shared, 'list', () => {}, undefined, owner)
+      this.cfreader.read_config(this.shared, 'ini', () => {}, this.opts, owner)
+
+      assert.equal(this.cfreader._read_args[this.shared].readers.length, 3)
+    })
+  })
+
   describe('load_config', function () {
     describe('non-exist.ini', function () {
       it('empty', function () {

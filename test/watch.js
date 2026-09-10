@@ -778,3 +778,56 @@ describe('watch', function () {
     assert.equal(watchers[1].unref_calls, 1)
   })
 })
+
+describe('watch reload with several readers', function () {
+  it('reload calls the callback of every reader of a file', function () {
+    const Watch = loadWatch()
+    const called = []
+    const reader = {
+      load_config() {},
+      last_load_error() {},
+    }
+    const one = { type: 'list', options: undefined, cb: () => called.push('one') }
+    const two = { type: 'list', options: undefined, cb: () => called.push('two') }
+
+    console.log = () => {}
+    Watch.reload(reader, 'test/config/host_list', { ...two, readers: [one, two] })
+
+    assert.deepEqual(called, ['one', 'two'])
+  })
+
+  it('reload refreshes the cache entry each reader reads', function () {
+    const Watch = loadWatch()
+    const loaded = []
+    const reader = {
+      load_config(name, type, options) {
+        loaded.push([type, options])
+      },
+      last_load_error() {},
+    }
+    const list = { type: 'list', options: undefined, cb() {} }
+    const value = { type: 'value', options: { booleans: ['a.b'] }, cb() {} }
+
+    console.log = () => {}
+    Watch.reload(reader, 'test/config/shared.ini', { ...value, readers: [list, value] })
+
+    assert.deepEqual(loaded, [
+      ['list', undefined],
+      ['value', { booleans: ['a.b'] }],
+    ])
+  })
+
+  it('reload without readers uses the single registration', function () {
+    const Watch = loadWatch()
+    let called = 0
+    const reader = {
+      load_config() {},
+      last_load_error() {},
+    }
+
+    console.log = () => {}
+    Watch.reload(reader, 'test/config/test.ini', { type: 'ini', options: undefined, cb: () => called++ })
+
+    assert.equal(called, 1)
+  })
+})
