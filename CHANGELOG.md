@@ -5,6 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Unreleased
 
 - fix: reload every reader of a config file
+- fix: key the config cache by type
 
 ### [1.7.0] - 2026-09-02
 

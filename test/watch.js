@@ -777,57 +777,115 @@ describe('watch', function () {
     assert.equal(watchCalls[1].opts.recursive, /win|darwin/.test(process.platform))
     assert.equal(watchers[1].unref_calls, 1)
   })
-})
 
-describe('watch reload with several readers', function () {
-  it('reload calls the callback of every reader of a file', function () {
-    const Watch = loadWatch()
-    const called = []
-    const reader = {
-      load_config() {},
-      last_load_error() {},
-    }
-    const one = { type: 'list', options: undefined, cb: () => called.push('one') }
-    const two = { type: 'list', options: undefined, cb: () => called.push('two') }
+  describe('reload with several readers', function () {
+    it('reload calls the callback of every reader of a file', function () {
+      const Watch = loadWatch()
+      const called = []
+      const reader = {
+        load_config() {},
+        last_load_error() {},
+      }
+      const one = { type: 'list', options: undefined, cb: () => called.push('one') }
+      const two = { type: 'list', options: undefined, cb: () => called.push('two') }
 
-    console.log = () => {}
-    Watch.reload(reader, 'test/config/host_list', { ...two, readers: [one, two] })
+      console.log = () => {}
+      Watch.reload(reader, 'test/config/host_list', { ...two, readers: [one, two] })
 
-    assert.deepEqual(called, ['one', 'two'])
-  })
+      assert.deepEqual(called, ['one', 'two'])
+    })
 
-  it('reload refreshes the cache entry each reader reads', function () {
-    const Watch = loadWatch()
-    const loaded = []
-    const reader = {
-      load_config(name, type, options) {
-        loaded.push([type, options])
-      },
-      last_load_error() {},
-    }
-    const list = { type: 'list', options: undefined, cb() {} }
-    const value = { type: 'value', options: { booleans: ['a.b'] }, cb() {} }
+    it('reload refreshes the cache entry each reader reads', function () {
+      const Watch = loadWatch()
+      const loaded = []
+      const reader = {
+        load_config(name, type, options) {
+          loaded.push([type, options])
+        },
+        last_load_error() {},
+      }
+      const list = { type: 'list', options: undefined, cb() {} }
+      const value = { type: 'value', options: { booleans: ['a.b'] }, cb() {} }
 
-    console.log = () => {}
-    Watch.reload(reader, 'test/config/shared.ini', { ...value, readers: [list, value] })
+      console.log = () => {}
+      Watch.reload(reader, 'test/config/shared.ini', { ...value, readers: [list, value] })
 
-    assert.deepEqual(loaded, [
-      ['list', undefined],
-      ['value', { booleans: ['a.b'] }],
-    ])
-  })
+      assert.deepEqual(loaded, [
+        ['list', undefined],
+        ['value', { booleans: ['a.b'] }],
+      ])
+    })
 
-  it('reload without readers uses the single registration', function () {
-    const Watch = loadWatch()
-    let called = 0
-    const reader = {
-      load_config() {},
-      last_load_error() {},
-    }
+    it('reload without readers uses the single registration', function () {
+      const Watch = loadWatch()
+      let called = 0
+      const reader = {
+        load_config() {},
+        last_load_error() {},
+      }
 
-    console.log = () => {}
-    Watch.reload(reader, 'test/config/test.ini', { type: 'ini', options: undefined, cb: () => called++ })
+      console.log = () => {}
+      Watch.reload(reader, 'test/config/test.ini', { type: 'ini', options: undefined, cb: () => called++ })
 
-    assert.equal(called, 1)
+      assert.equal(called, 1)
+    })
+
+    it('a throwing callback does not stop the other readers', function () {
+      const Watch = loadWatch()
+      const loaded = []
+      const errors = []
+      const reader = {
+        load_config(name, type) {
+          loaded.push(type)
+        },
+        last_load_error() {},
+      }
+
+      console.error = (msg) => errors.push(msg)
+      console.log = () => {}
+
+      Watch.reload(reader, 'shared.ini', {
+        readers: [
+          {
+            type: 'ini',
+            options: undefined,
+            cb() {
+              throw new Error('plugin blew up')
+            },
+          },
+          { type: 'list', options: undefined, cb() {} },
+        ],
+      })
+
+      assert.deepEqual(loaded, ['ini', 'list'])
+      assert.match(errors[0], /plugin blew up/)
+    })
+
+    it('reload announces a failure raised by any reader', function () {
+      const Watch = loadWatch()
+      const errors = []
+      const logs = []
+      const reader = {
+        load_config() {},
+        last_load_error(name, type, options) {
+          return options ? new Error('bad parse') : undefined
+        },
+      }
+
+      console.error = (msg) => errors.push(msg)
+      console.log = (msg) => logs.push(msg)
+
+      const err = Watch.reload(reader, 'shared.ini', {
+        readers: [
+          { type: 'ini', options: undefined, cb() {} },
+          { type: 'ini', options: { a: 1 }, cb() {} },
+        ],
+      })
+
+      assert.equal(err.message, 'bad parse')
+      assert.deepEqual(logs, [])
+      assert.equal(errors.length, 1)
+      assert.match(errors[0], /bad parse/)
+    })
   })
 })

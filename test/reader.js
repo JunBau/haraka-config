@@ -49,6 +49,57 @@ describe('reader', function () {
 
       assert.equal(this.cfreader._read_args[this.shared].readers.length, 3)
     })
+
+    it('keeps options in the identity of an overridden file', function () {
+      const owner = {}
+      this.cfreader._overrides[this.shared] = true
+      try {
+        this.cfreader.read_config(this.shared, 'ini', () => {}, undefined, owner)
+        this.cfreader.read_config(this.shared, 'ini', () => {}, this.opts, owner)
+      } finally {
+        delete this.cfreader._overrides[this.shared]
+      }
+
+      assert.equal(this.cfreader._read_args[this.shared].readers.length, 2)
+    })
+
+    it('keeps one registration for a caller that omits owner', function () {
+      this.cfreader.read_config(this.shared, 'ini', () => {}, undefined)
+      this.cfreader.read_config(this.shared, 'ini', () => {}, this.opts)
+
+      assert.equal(this.cfreader._read_args[this.shared].readers.length, 1)
+    })
+
+    it('reloading every reader leaves each type its own parsed shape', function () {
+      const watch = require('../lib/watch')
+      const ini_owner = {}
+      const list_owner = {}
+      this.cfreader.read_config(this.shared, 'ini', () => {}, undefined, ini_owner)
+      this.cfreader.read_config(this.shared, 'list', () => {}, undefined, list_owner)
+      // the ini reader read last, so its type is the one a shared slot keeps
+      this.cfreader.read_config(this.shared, 'ini', () => {}, undefined, ini_owner)
+
+      const log = console.log
+      console.log = () => {}
+      try {
+        watch.reload(this.cfreader, this.shared, this.cfreader._read_args[this.shared])
+      } finally {
+        console.log = log
+      }
+
+      const as_ini = this.cfreader.read_config(this.shared, 'ini', () => {}, undefined, ini_owner)
+      assert.equal(Array.isArray(as_ini), false)
+      assert.equal(Array.isArray(this.cfreader.read_config(this.shared, 'list', () => {}, undefined, list_owner)), true)
+    })
+
+    it('a bare reader keeps its own cache slot when another passes options', function () {
+      this.cfreader.read_config(this.shared, 'ini', () => {}, undefined, {})
+      this.cfreader.read_config(this.shared, 'ini', () => {}, this.opts, {})
+
+      const bare = this.cfreader.get_cache_key(this.shared, 'ini')
+      assert.equal(bare, this.cfreader.get_cache_key(this.shared, 'ini', undefined))
+      assert.notEqual(this.cfreader._config_cache[bare], undefined)
+    })
   })
 
   describe('load_config', function () {
@@ -404,16 +455,23 @@ describe('reader', function () {
   })
 
   describe('get_cache_key', function () {
-    it('no options is the name', function () {
-      assert.equal(this.cfreader.get_cache_key('test'), 'test')
+    it('no options is the name + type', function () {
+      assert.equal(this.cfreader.get_cache_key('test', 'ini'), 'test["ini"]')
     })
 
-    it('one option is name + serialized opts', function () {
-      assert.equal(this.cfreader.get_cache_key('test', { foo: 'bar' }), 'test{"foo":"bar"}')
+    it('one option is name + type + serialized opts', function () {
+      assert.equal(this.cfreader.get_cache_key('test', 'ini', { foo: 'bar' }), 'test["ini",{"foo":"bar"}]')
     })
 
     it('two options are returned predictably', function () {
-      assert.equal(this.cfreader.get_cache_key('test', { opt1: 'foo', opt2: 'bar' }), 'test{"opt1":"foo","opt2":"bar"}')
+      assert.equal(
+        this.cfreader.get_cache_key('test', 'ini', { opt1: 'foo', opt2: 'bar' }),
+        'test["ini",{"opt1":"foo","opt2":"bar"}]',
+      )
+    })
+
+    it('two types of one file get separate slots', function () {
+      assert.notEqual(this.cfreader.get_cache_key('test', 'list'), this.cfreader.get_cache_key('test', 'value'))
     })
   })
 
