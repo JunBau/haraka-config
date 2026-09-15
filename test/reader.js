@@ -92,6 +92,29 @@ describe('reader', function () {
       assert.equal(Array.isArray(this.cfreader.read_config(this.shared, 'list', () => {}, undefined, list_owner)), true)
     })
 
+    it('a no_watch reader registered here is left out of a reload', function () {
+      const watch = require('../lib/watch')
+      const watching = []
+      const opted_out = []
+      this.cfreader.read_config(this.shared, 'ini', () => watching.push(1), undefined, {})
+      this.cfreader.read_config(this.shared, 'ini', () => opted_out.push(1), { no_watch: true }, {})
+
+      const slot = this.cfreader.get_cache_key(this.shared, 'ini', { no_watch: true })
+      const before = this.cfreader._config_cache[slot]
+
+      const log = console.log
+      console.log = () => {}
+      try {
+        watch.reload(this.cfreader, this.shared, this.cfreader._read_args[this.shared])
+      } finally {
+        console.log = log
+      }
+
+      assert.equal(watching.length, 1)
+      assert.equal(opted_out.length, 0)
+      assert.equal(this.cfreader._config_cache[slot], before, 'an opted-out reader keeps its parsed value')
+    })
+
     it('a bare reader keeps its own cache slot when another passes options', function () {
       this.cfreader.read_config(this.shared, 'ini', () => {}, undefined, {})
       this.cfreader.read_config(this.shared, 'ini', () => {}, this.opts, {})
